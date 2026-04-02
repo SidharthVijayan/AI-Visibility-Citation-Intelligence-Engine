@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -21,9 +22,14 @@ class URLInput(BaseModel):
     url: str
 
 
-# -------- FETCH --------
+# -------- FETCH PAGE (FIXED) --------
 def fetch_page(url):
-    r = requests.get(url, timeout=10)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
+    }
+
+    r = requests.get(url, headers=headers, timeout=10)
+
     soup = BeautifulSoup(r.text, "html.parser")
 
     title = soup.title.string.strip() if soup.title else ""
@@ -86,7 +92,7 @@ def geo_reasoning(data, citation):
 
     if data["title_length"] > 60:
         reasons.append("Title too long for AI summarization")
-        fixes.append("Shorten title with clear intent")
+        fixes.append("Shorten title with clearer intent")
 
     if data["meta_length"] < 120:
         reasons.append("Meta lacks structured summary")
@@ -120,15 +126,26 @@ def analyze(input: URLInput):
     domain = extract_domain(url)
 
     data = fetch_page(url)
+
+    # DEBUG (optional — helps you verify different pages)
+    print("URL:", url)
+    print("TITLE:", data["title"])
+
     seo, issues = seo_score(data)
 
-    query = data["title"][:60]
+    # FIXED QUERY (important)
+    query = data["title"] + " " + data["meta"]
+
     citation = check_perplexity(query, domain)
     geo = geo_score(citation)
 
     final = int((seo * 0.6) + (geo * 0.4))
 
     geo_details = geo_reasoning(data, citation)
+
+    ai_output = run_ollama(
+        f"Improve SEO title: {data['title']} and meta: {data['meta']}"
+    )
 
     return {
         "url": url,
@@ -138,5 +155,5 @@ def analyze(input: URLInput):
         "issues": issues,
         "citation_status": citation,
         "geo_details": geo_details,
-        "ai_rewrite": run_ollama("Improve SEO title and meta")
+        "ai_rewrite": ai_output
     }
