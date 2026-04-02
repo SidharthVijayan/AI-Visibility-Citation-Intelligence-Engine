@@ -1,2 +1,16 @@
-# AI-Visibility-Citation-Intelligence-Engine
-a lightweight system that analyzes content at a page level, identifies CTR and metadata opportunities, and also checks how content is being surfaced across platforms like ChatGPT and Perplexity — including citation gaps and visibility issues.
+# AI Visibility & GEO Engine
+
+AI-powered SEO + GEO (Generative Engine Optimization) tool.
+
+## Features
+- SEO + CTR analysis
+- AI visibility tracking
+- Citation detection (Perplexity)
+- Bot strategy (training vs RAG)
+- Chrome Extension UI
+
+## Goal
+Help brands become visible in:
+- ChatGPT
+- Perplexity
+- Google AI Overviews
