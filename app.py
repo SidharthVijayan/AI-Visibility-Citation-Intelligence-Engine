@@ -8,7 +8,7 @@ import re
 
 app = FastAPI()
 
-# ✅ CORS FIX
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,14 +21,14 @@ class URLInput(BaseModel):
     url: str
 
 
-# -------- FETCH PAGE --------
+# -------- FETCH --------
 def fetch_page(url):
     r = requests.get(url, timeout=10)
     soup = BeautifulSoup(r.text, "html.parser")
 
     title = soup.title.string.strip() if soup.title else ""
-    meta_tag = soup.find("meta", attrs={"name": "description"})
-    meta_desc = meta_tag["content"].strip() if meta_tag and meta_tag.get("content") else ""
+    meta = soup.find("meta", attrs={"name": "description"})
+    meta_desc = meta["content"].strip() if meta and meta.get("content") else ""
     h1 = soup.find("h1")
 
     return {
@@ -40,10 +40,10 @@ def fetch_page(url):
     }
 
 
-# -------- CTR + SEO --------
-def ctr_analysis(data):
-    issues = []
+# -------- SEO --------
+def seo_score(data):
     score = 100
+    issues = []
 
     if data["title_length"] > 60:
         issues.append("Title too long")
@@ -57,7 +57,46 @@ def ctr_analysis(data):
         issues.append("Missing H1")
         score -= 20
 
-    return issues, max(score, 0)
+    return max(score, 0), issues
+
+
+# -------- GEO --------
+def extract_domain(url):
+    return re.findall(r"https?://(?:www\.)?([^/]+)", url)[0]
+
+
+def check_perplexity(query, domain):
+    try:
+        r = requests.get(f"https://www.perplexity.ai/search?q={query}")
+        return "CITED" if domain in r.text.lower() else "NOT CITED"
+    except:
+        return "UNKNOWN"
+
+
+def geo_score(status):
+    return {"CITED": 90, "NOT CITED": 40}.get(status, 60)
+
+
+def geo_reasoning(data, citation):
+    reasons = []
+    fixes = []
+
+    if citation == "NOT CITED":
+        reasons.append("Page is not referenced in AI-generated answers")
+
+    if data["title_length"] > 60:
+        reasons.append("Title too long for AI summarization")
+        fixes.append("Shorten title with clear intent")
+
+    if data["meta_length"] < 120:
+        reasons.append("Meta lacks structured summary")
+        fixes.append("Write concise factual meta description")
+
+    if not data["has_h1"]:
+        reasons.append("Missing strong content hierarchy")
+        fixes.append("Add keyword-aligned H1")
+
+    return {"reasons": reasons, "fixes": fixes}
 
 
 # -------- AI --------
@@ -74,36 +113,6 @@ def run_ollama(prompt):
         return "AI suggestions unavailable"
 
 
-def ai_rewrite(data):
-    prompt = f"""
-    Improve SEO:
-    Title: {data['title']}
-    Meta: {data['meta']}
-
-    Give improved versions.
-    """
-    return run_ollama(prompt)
-
-
-# -------- GEO --------
-def extract_domain(url):
-    return re.findall(r"https?://(?:www\.)?([^/]+)", url)[0]
-
-
-def check_perplexity(query, domain):
-    try:
-        r = requests.get(f"https://www.perplexity.ai/search?q={query}")
-        if domain in r.text.lower():
-            return "CITED"
-        return "NOT CITED"
-    except:
-        return "UNKNOWN"
-
-
-def geo_score(status):
-    return {"CITED": 90, "NOT CITED": 40}.get(status, 60)
-
-
 # -------- MAIN --------
 @app.post("/analyze")
 def analyze(input: URLInput):
@@ -111,21 +120,23 @@ def analyze(input: URLInput):
     domain = extract_domain(url)
 
     data = fetch_page(url)
-    issues, seo_score = ctr_analysis(data)
-    ai_output = ai_rewrite(data)
+    seo, issues = seo_score(data)
 
     query = data["title"][:60]
     citation = check_perplexity(query, domain)
     geo = geo_score(citation)
 
-    final_score = int((seo_score * 0.6) + (geo * 0.4))
+    final = int((seo * 0.6) + (geo * 0.4))
+
+    geo_details = geo_reasoning(data, citation)
 
     return {
         "url": url,
-        "seo_score": seo_score,
+        "seo_score": seo,
         "geo_score": geo,
-        "final_score": final_score,
+        "final_score": final,
         "issues": issues,
-        "ai_rewrite": ai_output,
-        "citation_status": citation
+        "citation_status": citation,
+        "geo_details": geo_details,
+        "ai_rewrite": run_ollama("Improve SEO title and meta")
     }
