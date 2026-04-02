@@ -9,7 +9,6 @@ from playwright.async_api import async_playwright
 
 app = FastAPI()
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -22,7 +21,7 @@ class URLInput(BaseModel):
     url: str
 
 
-# ---------------- CACHE ----------------
+# -------- CACHE --------
 cache = {}
 
 def get_cache(url):
@@ -32,7 +31,7 @@ def set_cache(url, data):
     cache[url] = data
 
 
-# ---------------- FETCH (ASYNC PLAYWRIGHT) ----------------
+# -------- FETCH (PLAYWRIGHT) --------
 async def fetch_page(url):
     cached = get_cache(url)
     if cached:
@@ -78,7 +77,7 @@ async def fetch_page(url):
         }
 
 
-# ---------------- SEO ----------------
+# -------- SEO --------
 def seo_score(data):
     score = 100
     issues = []
@@ -98,7 +97,7 @@ def seo_score(data):
     return max(score, 0), issues
 
 
-# ---------------- GEO ----------------
+# -------- GEO --------
 def extract_domain(url):
     return re.findall(r"https?://(?:www\.)?([^/]+)", url)[0]
 
@@ -128,7 +127,7 @@ def geo_reasoning(data, citation):
 
     if data["meta_length"] < 120:
         reasons.append("Meta lacks structured summary")
-        fixes.append("Write concise meta")
+        fixes.append("Improve meta description")
 
     if not data["has_h1"]:
         reasons.append("Missing strong H1 structure")
@@ -137,7 +136,7 @@ def geo_reasoning(data, citation):
     return {"reasons": reasons, "fixes": fixes}
 
 
-# ---------------- SINGLE ANALYZE ----------------
+# -------- SINGLE --------
 @app.post("/analyze")
 async def analyze(input: URLInput):
 
@@ -168,7 +167,7 @@ async def analyze(input: URLInput):
     }
 
 
-# ---------------- BATCH ANALYZE ----------------
+# -------- BATCH --------
 @app.post("/batch-analyze")
 async def batch_analyze(urls: list[str]):
 
@@ -200,7 +199,7 @@ async def batch_analyze(urls: list[str]):
     return {"results": results}
 
 
-# ---------------- KEYWORD TRACK ----------------
+# -------- KEYWORD --------
 @app.post("/keyword-check")
 def keyword_check(keyword: str, domains: list[str]):
 
