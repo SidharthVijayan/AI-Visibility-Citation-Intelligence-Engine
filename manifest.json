@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "GEO Engine",
-  "version": "2.0",
-  "permissions": ["activeTab"],
+  "version": "3.0",
+  "permissions": ["activeTab", "tabs"],
   "host_permissions": [
     "https://ai-visibility-citation-intelligence-whm5.onrender.com/*"
   ],
