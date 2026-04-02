@@ -1,219 +1,75 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from bs4 import BeautifulSoup
 import requests
-import re
-import asyncio
+import subprocess
+from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# --- CONFIGURATION ---
+TAVILY_API_KEY = "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" # Put your Tavily key here
 
-class URLInput(BaseModel):
+class SEORequest(BaseModel):
     url: str
 
-
-# -------- CACHE --------
-cache = {}
-
-def get_cache(url):
-    return cache.get(url)
-
-def set_cache(url, data):
-    cache[url] = data
-
-
-# -------- FETCH (PLAYWRIGHT) --------
-async def fetch_page(url):
-    cached = get_cache(url)
-    if cached:
-        return cached
-
-    try:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-
-            await page.goto(url, timeout=60000)
-            await page.wait_for_timeout(2000)
-
+async def get_clean_content(url):
+    """Bypasses blocks by using Playwright with a specific wait strategy."""
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            # Wait for the main content (h1) to ensure it's not a blank/error page
+            await page.wait_for_selector("h1", timeout=5000)
             html = await page.content()
+            title = await page.title()
+            return html, title
+        except:
+            return None, "Content Restricted"
+        finally:
             await browser.close()
 
-        soup = BeautifulSoup(html, "html.parser")
-
-        title = soup.title.string.strip() if soup.title else ""
-        meta_tag = soup.find("meta", attrs={"name": "description"})
-        meta_desc = meta_tag["content"].strip() if meta_tag and meta_tag.get("content") else ""
-        h1 = soup.find("h1")
-
-        data = {
-            "title": title,
-            "title_length": len(title),
-            "meta": meta_desc,
-            "meta_length": len(meta_desc),
-            "has_h1": bool(h1)
-        }
-
-        set_cache(url, data)
-        return data
-
-    except Exception as e:
-        print("FETCH ERROR:", e)
-        return {
-            "title": "Error",
-            "title_length": 5,
-            "meta": "",
-            "meta_length": 0,
-            "has_h1": False
-        }
-
-
-# -------- SEO --------
-def seo_score(data):
-    score = 100
-    issues = []
-
-    if data["title_length"] > 60:
-        issues.append("Title too long")
-        score -= 15
-
-    if data["meta_length"] < 120:
-        issues.append("Weak meta description")
-        score -= 15
-
-    if not data["has_h1"]:
-        issues.append("Missing H1")
-        score -= 20
-
-    return max(score, 0), issues
-
-
-# -------- GEO --------
-def extract_domain(url):
-    return re.findall(r"https?://(?:www\.)?([^/]+)", url)[0]
-
-
-def check_perplexity(query, domain):
+def ask_ollama(prompt):
+    """Uses your local Ollama to analyze the data."""
     try:
-        r = requests.get(f"https://www.perplexity.ai/search?q={query}")
-        return "CITED" if domain in r.text.lower() else "NOT CITED"
-    except:
-        return "UNKNOWN"
+        result = subprocess.check_output(
+            ["ollama", "run", "llama3", prompt], 
+            stderr=subprocess.STDOUT
+        )
+        return result.decode("utf-8").strip()
+    except Exception as e:
+        return "Ollama analysis failed. Ensure Ollama is running."
 
-
-def geo_score(status):
-    return {"CITED": 90, "NOT CITED": 40}.get(status, 60)
-
-
-def geo_reasoning(data, citation):
-    reasons = []
-    fixes = []
-
-    if citation == "NOT CITED":
-        reasons.append("Page not referenced in AI answers")
-
-    if data["title_length"] > 60:
-        reasons.append("Title too long for AI summarization")
-        fixes.append("Shorten title")
-
-    if data["meta_length"] < 120:
-        reasons.append("Meta lacks structured summary")
-        fixes.append("Improve meta description")
-
-    if not data["has_h1"]:
-        reasons.append("Missing strong H1 structure")
-        fixes.append("Add keyword-aligned H1")
-
-    return {"reasons": reasons, "fixes": fixes}
-
-
-# -------- SINGLE --------
 @app.post("/analyze")
-async def analyze(input: URLInput):
+async def analyze_url(request: SEORequest):
+    # 1. SCRAPE DATA
+    html, title = await get_clean_content(request.url)
+    if not html:
+        raise HTTPException(status_code=400, detail="Could not access page content")
 
-    url = input.url
-    domain = extract_domain(url)
+    # 2. SEO SCORING (Simple Logic)
+    soup = BeautifulSoup(html, 'html.parser')
+    h1_count = len(soup.find_all('h1'))
+    seo_score = 80 if h1_count > 0 else 40
 
-    data = await fetch_page(url)
+    # 3. GEO ENGINE (Tavily + Ollama)
+    # Instead of scraping Perplexity, we ask Tavily who is currently ranking
+    tavily_data = requests.post("https://api.tavily.com/search", json={
+        "api_key": TAVILY_API_KEY,
+        "query": f"Is {title} a reliable source for information?",
+        "search_depth": "basic"
+    }).json()
 
-    seo, issues = seo_score(data)
-
-    query = data["title"] + " " + data["meta"]
-
-    citation = check_perplexity(query, domain)
-    geo = geo_score(citation)
-
-    final = int((seo * 0.6) + (geo * 0.4))
-
-    geo_details = geo_reasoning(data, citation)
+    # 4. LLM REASONING
+    context = str(tavily_data.get("results", []))[:2000] # Limit text for Ollama
+    geo_prompt = f"Based on these search results: {context}, explain why {request.url} might be cited by an AI."
+    reasoning = ask_ollama(geo_prompt)
 
     return {
-        "url": url,
-        "seo_score": seo,
-        "geo_score": geo,
-        "final_score": final,
-        "issues": issues,
-        "citation_status": citation,
-        "geo_details": geo_details
+        "url": request.url,
+        "seo_score": seo_score,
+        "geo_score": 75, # Placeholder or calculated logic
+        "reasoning": reasoning,
+        "status": "Success"
     }
-
-
-# -------- BATCH --------
-@app.post("/batch-analyze")
-async def batch_analyze(urls: list[str]):
-
-    tasks = [fetch_page(url) for url in urls]
-    pages = await asyncio.gather(*tasks)
-
-    results = []
-
-    for i, data in enumerate(pages):
-        url = urls[i]
-        domain = extract_domain(url)
-
-        seo, _ = seo_score(data)
-        query = data["title"] + " " + data["meta"]
-
-        citation = check_perplexity(query, domain)
-        geo = geo_score(citation)
-
-        final = int((seo * 0.6) + (geo * 0.4))
-
-        results.append({
-            "url": url,
-            "score": final,
-            "seo": seo,
-            "geo": geo,
-            "citation": citation
-        })
-
-    return {"results": results}
-
-
-# -------- KEYWORD --------
-@app.post("/keyword-check")
-def keyword_check(keyword: str, domains: list[str]):
-
-    results = {}
-
-    try:
-        r = requests.get(f"https://www.perplexity.ai/search?q={keyword}")
-        text = r.text.lower()
-
-        for d in domains:
-            results[d] = "CITED" if d in text else "NOT CITED"
-
-    except:
-        for d in domains:
-            results[d] = "UNKNOWN"
-
-    return results
