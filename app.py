@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
 from bs4 import BeautifulSoup
@@ -6,6 +7,15 @@ import subprocess
 import re
 
 app = FastAPI()
+
+# ✅ CORS FIX
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class URLInput(BaseModel):
     url: str
@@ -33,24 +43,24 @@ def fetch_page(url):
 # -------- CTR + SEO --------
 def ctr_analysis(data):
     issues = []
-    suggestions = []
+    score = 100
 
     if data["title_length"] > 60:
         issues.append("Title too long")
-        suggestions.append("Keep title under 60 chars")
+        score -= 15
 
     if data["meta_length"] < 120:
         issues.append("Weak meta description")
-        suggestions.append("Write compelling 120–155 char meta")
+        score -= 15
 
     if not data["has_h1"]:
         issues.append("Missing H1")
-        suggestions.append("Add keyword-rich H1")
+        score -= 20
 
-    return issues, suggestions
+    return issues, max(score, 0)
 
 
-# -------- OLLAMA AI --------
+# -------- AI --------
 def run_ollama(prompt):
     try:
         result = subprocess.run(
@@ -61,64 +71,37 @@ def run_ollama(prompt):
         )
         return result.stdout.strip()
     except:
-        return "AI unavailable"
+        return "AI suggestions unavailable"
 
 
 def ai_rewrite(data):
     prompt = f"""
-    Improve SEO for:
+    Improve SEO:
     Title: {data['title']}
     Meta: {data['meta']}
 
-    Return:
-    - Better title
-    - Better meta
-    - Why it improves CTR
+    Give improved versions.
     """
     return run_ollama(prompt)
 
 
-# -------- GEO CITATION ENGINE --------
+# -------- GEO --------
 def extract_domain(url):
     return re.findall(r"https?://(?:www\.)?([^/]+)", url)[0]
 
 
 def check_perplexity(query, domain):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    url = f"https://www.perplexity.ai/search?q={query}"
-
     try:
-        r = requests.get(url, headers=headers, timeout=10)
-        text = r.text.lower()
-
-        if domain in text:
+        r = requests.get(f"https://www.perplexity.ai/search?q={query}")
+        if domain in r.text.lower():
             return "CITED"
         return "NOT CITED"
     except:
         return "UNKNOWN"
 
 
-def geo_score(citation):
-    if citation == "CITED":
-        return 8
-    elif citation == "NOT CITED":
-        return 3
-    return 5
-
-
-# -------- BOT STRATEGY --------
-def bot_strategy(url):
-    if "webmd" in url:
-        return {
-            "training": "BLOCK",
-            "rag": "ALLOW",
-            "reason": "Protect medical IP, allow AI citation"
-        }
-    return {
-        "training": "ALLOW",
-        "rag": "ALLOW",
-        "reason": "General content"
-    }
+def geo_score(status):
+    return {"CITED": 90, "NOT CITED": 40}.get(status, 60)
 
 
 # -------- MAIN --------
@@ -127,37 +110,22 @@ def analyze(input: URLInput):
     url = input.url
     domain = extract_domain(url)
 
-    try:
-        data = fetch_page(url)
-    except:
-        return {"error": "Fetch failed"}
-
-    issues, suggestions = ctr_analysis(data)
+    data = fetch_page(url)
+    issues, seo_score = ctr_analysis(data)
     ai_output = ai_rewrite(data)
 
     query = data["title"][:60]
     citation = check_perplexity(query, domain)
+    geo = geo_score(citation)
+
+    final_score = int((seo_score * 0.6) + (geo * 0.4))
 
     return {
         "url": url,
-
-        "seo": data,
+        "seo_score": seo_score,
+        "geo_score": geo,
+        "final_score": final_score,
         "issues": issues,
-        "suggestions": suggestions,
-
         "ai_rewrite": ai_output,
-
-        "geo": {
-            "citation_status": citation,
-            "geo_score": geo_score(citation),
-            "query_used": query
-        },
-
-        "bot_strategy": bot_strategy(url),
-
-        "tracker": {
-            "url": url,
-            "geo_score": geo_score(citation),
-            "priority": "HIGH" if len(issues) > 1 else "MEDIUM"
-        }
+        "citation_status": citation
     }
