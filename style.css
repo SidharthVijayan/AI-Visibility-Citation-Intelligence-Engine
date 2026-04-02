@@ -2,13 +2,33 @@ body {
   font-family: Arial;
   width: 350px;
   padding: 10px;
+  background: #0f172a;
+  color: white;
 }
 
 h2 {
-  color: #333;
+  text-align: center;
 }
 
 button {
-  padding: 8px;
+  width: 100%;
+  padding: 10px;
   margin-bottom: 10px;
+  background: #3b82f6;
+  border: none;
+  color: white;
+  cursor: pointer;
+}
+
+.card {
+  background: #1e293b;
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+}
+
+.score {
+  font-size: 28px;
+  font-weight: bold;
+  color: #22c55e;
 }
