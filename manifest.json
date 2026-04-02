@@ -3,6 +3,9 @@
   "name": "GEO Engine",
   "version": "2.0",
   "permissions": ["activeTab"],
+  "host_permissions": [
+    "https://ai-visibility-citation-intelligence-whm5.onrender.com/*"
+  ],
   "action": {
     "default_popup": "popup.html"
   }
