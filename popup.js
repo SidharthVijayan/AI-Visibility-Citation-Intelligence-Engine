@@ -15,40 +15,46 @@ document.getElementById("analyze").onclick = async () => {
     const data = await res.json();
 
     document.getElementById("dashboard").innerHTML = `
+      
       <div class="card">
-        <h3>🔥 Overall Score</h3>
-        <div class="score">${data.final_score}</div>
+        <div class="score-circle" style="--percent:${data.final_score}%">
+          <div class="score-inner">${data.final_score}</div>
+        </div>
       </div>
 
       <div class="card">
-        <h3>SEO Score</h3>
-        <div>${data.seo_score}</div>
+        <h3>Performance Breakdown</h3>
+
+        <div>SEO Score: ${data.seo_score}</div>
+        <div class="bar">
+          <div class="bar-fill seo" style="width:${data.seo_score}%"></div>
+        </div>
+
+        <div style="margin-top:10px;">GEO Score: ${data.geo_score}</div>
+        <div class="bar">
+          <div class="bar-fill geo" style="width:${data.geo_score}%"></div>
+        </div>
       </div>
 
       <div class="card">
-        <h3>GEO Score</h3>
-        <div>${data.geo_score}</div>
-      </div>
-
-      <div class="card">
-        <h3>AI Citation</h3>
-        <div>${data.citation_status}</div>
+        <h3>AI Visibility</h3>
+        <span class="badge ${data.citation_status === "CITED" ? "good" : "bad"}">
+          ${data.citation_status}
+        </span>
       </div>
 
       <div class="card">
         <h3>Issues</h3>
-        <ul>
-          ${data.issues.map(i => `<li>${i}</li>`).join("")}
-        </ul>
+        ${data.issues.map(i => `<div class="issue">${i}</div>`).join("")}
       </div>
 
       <div class="card">
         <h3>AI Suggestions</h3>
-        <pre>${data.ai_rewrite}</pre>
+        <div class="ai-box">${data.ai_rewrite}</div>
       </div>
+
     `;
   } catch (error) {
-    document.getElementById("dashboard").innerHTML = "Error connecting to API";
-    console.error(error);
+    document.getElementById("dashboard").innerHTML = "Error loading data";
   }
 };
