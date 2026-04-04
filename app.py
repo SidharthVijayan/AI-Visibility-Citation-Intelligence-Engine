@@ -28,7 +28,7 @@ def ask_groq(prompt):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     data = {
-        "model": "mixtral-8x7b-32768",
+        "model": "llama3-8b-8192",
         "messages": [{"role": "user", "content": prompt}]
     }
     response = requests.post(url, headers=headers, json=data)
