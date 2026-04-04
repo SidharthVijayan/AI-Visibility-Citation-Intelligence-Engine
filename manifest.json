@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "GEO Engine",
-  "version": "3.0",
-  "permissions": ["activeTab", "tabs"],
+  "name": "GEO Visibility Engine",
+  "version": "1.0",
+  "permissions": ["tabs", "activeTab"],
   "host_permissions": [
-    "https://ai-visibility-citation-intelligence-whm5.onrender.com/*"
+    "http://127.0.0.1:8080/*"
   ],
   "action": {
     "default_popup": "popup.html"
