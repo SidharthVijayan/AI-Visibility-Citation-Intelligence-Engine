@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   const button = document.getElementById("analyze");
   
-  // Pointing to your MacBook's Localhost (Port 8080)
+  // Pointing to your MacBook's Localhost on Port 8080
   const LOCAL_URL = "http://127.0.0.1:8080/analyze";
 
   button.addEventListener("click", async () => {
