@@ -1,72 +1,66 @@
 import os
-from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import requests
-from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
+from tavily import TavilyClient
 
-load_dotenv()
 app = FastAPI()
 
-# --- THE FIX: This tells the "bouncer" to let your extension in ---
+# Allow your Chrome Extension to talk to this Python server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, you'd put your extension ID here
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+# --- HARDCODED KEYS (No .env needed) ---
+TAVILY_API_KEY = "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"
+GROQ_API_KEY = "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"
 
-class SEORequest(BaseModel):
+tavily = TavilyClient(api_key=TAVILY_API_KEY)
+
+class AnalyzeRequest(BaseModel):
     url: str
-
-async def get_clean_content(url):
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
-            html = await page.content()
-            title = await page.title()
-            return html, title
-        except:
-            return None, "Content Restricted"
-        finally:
-            await browser.close()
 
 def ask_groq(prompt):
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     data = {
-        "model": "llama3-8b-8192",
+        "model": "mixtral-8x7b-32768",
         "messages": [{"role": "user", "content": prompt}]
     }
     response = requests.post(url, headers=headers, json=data)
+    # This check prevents the 'choices' KeyError
+    if response.status_code != 200:
+        print(f"Groq Error: {response.text}")
+        return "AI Analysis temporarily unavailable."
     return response.json()['choices'][0]['message']['content']
 
 @app.post("/analyze")
-async def analyze_url(request: SEORequest):
-    html, title = await get_clean_content(request.url)
-    if not html:
-        raise HTTPException(status_code=400, detail="Scraping failed")
+async def analyze_url(request: AnalyzeRequest):
+    try:
+        # 1. Search for the URL's presence online
+        search_result = tavily.search(query=f"site:{request.url} visibility and citations", search_depth="advanced")
+        context = str(search_result.get('results', []))
+        
+        # 2. Get AI Reasoning from Groq
+        reasoning = ask_groq(f"Based on: {context}, why would an AI cite {request.url}? Provide a short SEO summary.")
+        
+        # 3. Simple scoring logic
+        seo_score = 85 if "results" in context else 40
+        geo_score = 75 if ".ae" in request.url or "UAE" in context else 30
 
-    tavily_res = requests.post("https://api.tavily.com/search", json={
-        "api_key": TAVILY_API_KEY,
-        "query": f"Is {title} a trusted source?",
-        "search_depth": "basic"
-    }).json()
+        return {
+            "seo_score": seo_score,
+            "geo_score": geo_score,
+            "reasoning": reasoning
+        }
+    except Exception as e:
+        print(f"Server Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    context = str(tavily_res.get("results", []))[:3000]
-    reasoning = ask_groq(f"Based on: {context}, why would an AI cite {request.url}?")
-
-    return {
-        "url": request.url,
-        "seo_score": 85,
-        "geo_score": 80,
-        "reasoning": reasoning
-    }
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8080)
