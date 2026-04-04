@@ -7,7 +7,7 @@ from tavily import TavilyClient
 
 app = FastAPI()
 
-# This tells your Mac to allow the Chrome Extension to talk to this script
+# Enable CORS for Chrome Extension
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,7 +32,7 @@ def ask_groq(prompt):
         "Content-Type": "application/json"
     }
     data = {
-        "model": "llama3-8b-8192", # Using the live Llama 3 model
+        "model": "llama-3.1-8b-instant", # Latest stable model
         "messages": [{"role": "user", "content": prompt}]
     }
     
@@ -55,15 +55,15 @@ async def analyze_url(request: AnalyzeRequest):
     try:
         print(f"--- New Analysis Request for: {request.url} ---")
         
-        # 1. Search for visibility data via Tavily
+        # 1. Search for visibility data
         search_result = tavily.search(query=f"site:{request.url} visibility and citations", search_depth="advanced")
         context = str(search_result.get('results', []))
         
-        # 2. Get AI reasoning via Groq
+        # 2. Get AI reasoning
         ai_prompt = f"Analyze this search context: {context}. Explain why an AI would cite {request.url} for a UAE-based brand."
         reasoning = ask_groq(ai_prompt)
         
-        # 3. Scoring Logic (Simple SEO/GEO Logic)
+        # 3. Scoring Logic
         seo_score = 85 if len(context) > 100 else 40
         geo_score = 90 if ".ae" in request.url or "UAE" in context.upper() else 35
 
@@ -78,5 +78,4 @@ async def analyze_url(request: AnalyzeRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    # Start on Port 8080 to match your Chrome Extension settings
     uvicorn.run(app, host="127.0.0.1", port=8080)
