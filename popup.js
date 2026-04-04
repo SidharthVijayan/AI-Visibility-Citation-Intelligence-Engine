@@ -1,7 +1,7 @@
 document.addEventListener("DOMContentLoaded", () => {
   const button = document.getElementById("analyze");
   
-  // We use Port 8080 to avoid the "Address already in use" error on Macs
+  // UPDATED: Changed from 8000 to 8080 to match your running server
   const LOCAL_URL = "http://127.0.0.1:8080/analyze";
 
   button.addEventListener("click", async () => {
@@ -17,9 +17,10 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({ url: tab.url })
       });
 
+      if (!response.ok) throw new Error('Server side error');
+
       const data = await response.json();
       
-      // Redirect to your dashboard with the results
       const dashboardUrl = chrome.runtime.getURL("dashboard.html") +
         `?seo=${data.seo_score}&geo=${data.geo_score}&reasoning=${encodeURIComponent(data.reasoning)}`;
       
@@ -28,7 +29,8 @@ document.addEventListener("DOMContentLoaded", () => {
       button.disabled = false;
 
     } catch (err) {
-      alert("Connection failed! Run 'python3 -m uvicorn app:app --reload --port 8080' in terminal.");
+      console.error(err);
+      alert("Ensure your terminal says 'Uvicorn running on http://127.0.0.1:8080'");
       button.innerText = "Try Again";
       button.disabled = false;
     }
