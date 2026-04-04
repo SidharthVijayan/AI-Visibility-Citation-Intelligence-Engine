@@ -7,7 +7,7 @@ from tavily import TavilyClient
 
 app = FastAPI()
 
-# Enable CORS so the Chrome Extension can talk to this Mac server
+# This tells your Mac to allow the Chrome Extension to talk to this script
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,7 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- HARDCODED API KEYS ---
+# --- YOUR API KEYS ---
 TAVILY_API_KEY = "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"
 GROQ_API_KEY = "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"
 
@@ -32,7 +32,7 @@ def ask_groq(prompt):
         "Content-Type": "application/json"
     }
     data = {
-        "model": "llama3-8b-8192",  # UPDATED: Mixtral was decommissioned
+        "model": "llama3-8b-8192", # Using the live Llama 3 model
         "messages": [{"role": "user", "content": prompt}]
     }
     
@@ -53,17 +53,17 @@ def ask_groq(prompt):
 @app.post("/analyze")
 async def analyze_url(request: AnalyzeRequest):
     try:
-        print(f"Request received for: {request.url}")
+        print(f"--- New Analysis Request for: {request.url} ---")
         
-        # 1. Search for visibility data
+        # 1. Search for visibility data via Tavily
         search_result = tavily.search(query=f"site:{request.url} visibility and citations", search_depth="advanced")
         context = str(search_result.get('results', []))
         
-        # 2. Get AI reasoning
+        # 2. Get AI reasoning via Groq
         ai_prompt = f"Analyze this search context: {context}. Explain why an AI would cite {request.url} for a UAE-based brand."
         reasoning = ask_groq(ai_prompt)
         
-        # 3. Scoring Logic
+        # 3. Scoring Logic (Simple SEO/GEO Logic)
         seo_score = 85 if len(context) > 100 else 40
         geo_score = 90 if ".ae" in request.url or "UAE" in context.upper() else 35
 
@@ -78,4 +78,5 @@ async def analyze_url(request: AnalyzeRequest):
 
 if __name__ == "__main__":
     import uvicorn
+    # Start on Port 8080 to match your Chrome Extension settings
     uvicorn.run(app, host="127.0.0.1", port=8080)
