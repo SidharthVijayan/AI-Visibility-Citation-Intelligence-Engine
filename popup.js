@@ -1,7 +1,5 @@
 document.addEventListener("DOMContentLoaded", () => {
   const button = document.getElementById("analyze");
-  
-  // UPDATED: Changed from 8000 to 8080 to match your running server
   const LOCAL_URL = "http://127.0.0.1:8080/analyze";
 
   button.addEventListener("click", async () => {
@@ -21,6 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const data = await response.json();
       
+      // Open the dashboard with the results
       const dashboardUrl = chrome.runtime.getURL("dashboard.html") +
         `?seo=${data.seo_score}&geo=${data.geo_score}&reasoning=${encodeURIComponent(data.reasoning)}`;
       
@@ -30,7 +29,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     } catch (err) {
       console.error(err);
-      alert("Ensure your terminal says 'Uvicorn running on http://127.0.0.1:8080'");
+      alert("Ensure your terminal is running: python3 -m uvicorn app:app --reload --port 8080");
       button.innerText = "Try Again";
       button.disabled = false;
     }
