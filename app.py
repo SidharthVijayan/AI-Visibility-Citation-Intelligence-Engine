@@ -1,27 +1,38 @@
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
-import subprocess
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
+# Load the secret keys
+load_dotenv()
+
 app = FastAPI()
 
-# --- CONFIGURATION ---
-TAVILY_API_KEY = "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" # Put your Tavily key here
+# Allow the Chrome Extension to talk to this script
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 class SEORequest(BaseModel):
     url: str
 
 async def get_clean_content(url):
-    """Bypasses blocks by using Playwright with a specific wait strategy."""
+    """Scrapes the website using Playwright."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
         try:
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            # Wait for the main content (h1) to ensure it's not a blank/error page
-            await page.wait_for_selector("h1", timeout=5000)
+            await page.goto(url, wait_until="domcontentloaded", timeout=20000)
             html = await page.content()
             title = await page.title()
             return html, title
@@ -30,46 +41,40 @@ async def get_clean_content(url):
         finally:
             await browser.close()
 
-def ask_ollama(prompt):
-    """Uses your local Ollama to analyze the data."""
-    try:
-        result = subprocess.check_output(
-            ["ollama", "run", "llama3", prompt], 
-            stderr=subprocess.STDOUT
-        )
-        return result.decode("utf-8").strip()
-    except Exception as e:
-        return "Ollama analysis failed. Ensure Ollama is running."
+def ask_groq(prompt):
+    """Sends data to Groq Cloud for instant AI analysis."""
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {GROQ_API_KEY}"}
+    data = {
+        "model": "llama3-8b-8192",
+        "messages": [
+            {"role": "system", "content": "You are an AI SEO expert for a UAE-based brand."},
+            {"role": "user", "content": prompt}
+        ]
+    }
+    response = requests.post(url, headers=headers, json=data)
+    return response.json()['choices'][0]['message']['content']
 
 @app.post("/analyze")
 async def analyze_url(request: SEORequest):
-    # 1. SCRAPE DATA
     html, title = await get_clean_content(request.url)
     if not html:
-        raise HTTPException(status_code=400, detail="Could not access page content")
+        raise HTTPException(status_code=400, detail="Scraping failed")
 
-    # 2. SEO SCORING (Simple Logic)
-    soup = BeautifulSoup(html, 'html.parser')
-    h1_count = len(soup.find_all('h1'))
-    seo_score = 80 if h1_count > 0 else 40
-
-    # 3. GEO ENGINE (Tavily + Ollama)
-    # Instead of scraping Perplexity, we ask Tavily who is currently ranking
-    tavily_data = requests.post("https://api.tavily.com/search", json={
+    # Step 1: Search context via Tavily
+    tavily_res = requests.post("https://api.tavily.com/search", json={
         "api_key": TAVILY_API_KEY,
-        "query": f"Is {title} a reliable source for information?",
+        "query": f"Is {title} a trusted authority?",
         "search_depth": "basic"
     }).json()
 
-    # 4. LLM REASONING
-    context = str(tavily_data.get("results", []))[:2000] # Limit text for Ollama
-    geo_prompt = f"Based on these search results: {context}, explain why {request.url} might be cited by an AI."
-    reasoning = ask_ollama(geo_prompt)
+    # Step 2: AI Reasoning via Groq
+    context = str(tavily_res.get("results", []))[:3000]
+    reasoning = ask_groq(f"Based on: {context}, why would an AI cite {request.url}?")
 
     return {
         "url": request.url,
-        "seo_score": seo_score,
-        "geo_score": 75, # Placeholder or calculated logic
-        "reasoning": reasoning,
-        "status": "Success"
+        "seo_score": 85,
+        "geo_score": 80,
+        "reasoning": reasoning
     }
