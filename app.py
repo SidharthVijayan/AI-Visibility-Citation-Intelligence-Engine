@@ -7,15 +7,16 @@ from tavily import TavilyClient
 
 app = FastAPI()
 
-# Allow your Chrome Extension to talk to this Python server
+# Enable CORS so the Chrome Extension can talk to this Mac server
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --- HARDCODED KEYS (No .env needed) ---
+# --- HARDCODED API KEYS ---
 TAVILY_API_KEY = "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"
 GROQ_API_KEY = "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"
 
@@ -26,31 +27,45 @@ class AnalyzeRequest(BaseModel):
 
 def ask_groq(prompt):
     url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
     data = {
-        "model": "llama3-8b-8192",
+        "model": "llama3-8b-8192",  # UPDATED: Mixtral was decommissioned
         "messages": [{"role": "user", "content": prompt}]
     }
-    response = requests.post(url, headers=headers, json=data)
-    # This check prevents the 'choices' KeyError
-    if response.status_code != 200:
-        print(f"Groq Error: {response.text}")
-        return "AI Analysis temporarily unavailable."
-    return response.json()['choices'][0]['message']['content']
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code != 200:
+            print(f"Groq Error: {response.text}")
+            return "AI Analysis is currently unavailable."
+
+        result = response.json()
+        if 'choices' in result and len(result['choices']) > 0:
+            return result['choices'][0]['message']['content']
+        return "The AI could not generate a response."
+    except Exception as e:
+        print(f"Groq Connection Error: {str(e)}")
+        return "Failed to connect to AI engine."
 
 @app.post("/analyze")
 async def analyze_url(request: AnalyzeRequest):
     try:
-        # 1. Search for the URL's presence online
+        print(f"Request received for: {request.url}")
+        
+        # 1. Search for visibility data
         search_result = tavily.search(query=f"site:{request.url} visibility and citations", search_depth="advanced")
         context = str(search_result.get('results', []))
         
-        # 2. Get AI Reasoning from Groq
-        reasoning = ask_groq(f"Based on: {context}, why would an AI cite {request.url}? Provide a short SEO summary.")
+        # 2. Get AI reasoning
+        ai_prompt = f"Analyze this search context: {context}. Explain why an AI would cite {request.url} for a UAE-based brand."
+        reasoning = ask_groq(ai_prompt)
         
-        # 3. Simple scoring logic
-        seo_score = 85 if "results" in context else 40
-        geo_score = 75 if ".ae" in request.url or "UAE" in context else 30
+        # 3. Scoring Logic
+        seo_score = 85 if len(context) > 100 else 40
+        geo_score = 90 if ".ae" in request.url or "UAE" in context.upper() else 35
 
         return {
             "seo_score": seo_score,
@@ -58,7 +73,7 @@ async def analyze_url(request: AnalyzeRequest):
             "reasoning": reasoning
         }
     except Exception as e:
-        print(f"Server Error: {str(e)}")
+        print(f"Internal Server Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
