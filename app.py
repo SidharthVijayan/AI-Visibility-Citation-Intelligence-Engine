@@ -32,7 +32,7 @@ def ask_groq(prompt):
         "Content-Type": "application/json"
     }
     data = {
-        "model": "llama-3.1-8b-instant", # Latest stable model
+        "model": "llama-3.1-8b-instant", 
         "messages": [{"role": "user", "content": prompt}]
     }
     
@@ -54,16 +54,12 @@ def ask_groq(prompt):
 async def analyze_url(request: AnalyzeRequest):
     try:
         print(f"--- New Analysis Request for: {request.url} ---")
-        
-        # 1. Search for visibility data
         search_result = tavily.search(query=f"site:{request.url} visibility and citations", search_depth="advanced")
         context = str(search_result.get('results', []))
         
-        # 2. Get AI reasoning
         ai_prompt = f"Analyze this search context: {context}. Explain why an AI would cite {request.url} for a UAE-based brand."
         reasoning = ask_groq(ai_prompt)
         
-        # 3. Scoring Logic
         seo_score = 85 if len(context) > 100 else 40
         geo_score = 90 if ".ae" in request.url or "UAE" in context.upper() else 35
 
